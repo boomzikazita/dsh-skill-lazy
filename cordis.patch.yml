@@ -1,0 +1,8 @@
+# dsh-skill-lazy bundle patch — skill 目录懒加载
+# 挂载：把 dsh-skill-lazy 加入 profile 的 dsh.profile.bundles
+- insert:
+    - id: skill-lazy
+      name: 'dsh-skill-lazy'
+      config:
+        catalogDescriptionMaxLength: 40
+        topK: 6

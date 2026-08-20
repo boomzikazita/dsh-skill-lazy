@@ -1,0 +1,29 @@
+{
+  "name": "dsh-skill-lazy",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.js",
+  "description": "Lazy skill catalog loading for DeepSeek Harness: injects only skill name + one-line summary on first pass to save tokens, with on-demand full lookup via skill_search and call-frequency ranking.",
+  "license": "MIT",
+  "author": "boomzikazita",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/boomzikazita/dsh-skill-lazy.git"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "skill",
+    "lazy-loading",
+    "tokens"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.6"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
