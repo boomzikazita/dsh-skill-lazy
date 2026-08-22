@@ -30,6 +30,11 @@ By default, DSH injects the full skill catalog — the name plus up to a 500-cha
 
 - A `skill_mece_check` tool runs before creating or evaluating a skill: it checks **mutual exclusivity** (keyword overlap against every existing skill, with overlap ratio) and **collective exhaustiveness** (domain coverage matrix with empty/weak domain flags), then recommends whether to create a new skill or extend an existing one.
 
+### `cost_audit`
+
+- A `cost_audit` token-cost watchdog (added 2026-08-21) tallies the character/token cost of every plugin tool `description` and every skill directory `description`, compares against budgets (tool descriptions default **1500 tokens**; skill directory default **800 tokens**), and flags anything over budget for slimming or collapsing.
+- Single tool descriptions longer than 700 characters are marked for slimming — the detail belongs in the skill's own docs, not in the injected description.
+
 ## Installation
 
 ```bash
