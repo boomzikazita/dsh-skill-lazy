@@ -1,4 +1,4 @@
-# dsh-skill-lazy bundle patch — skill 目录懒加载
+# dsh-skill-lazy bundle patch — skill 目录懒加载 + 领域折叠
 # 挂载：把 dsh-skill-lazy 加入 profile 的 dsh.profile.bundles
 - insert:
     - id: skill-lazy
@@ -6,3 +6,8 @@
       config:
         catalogDescriptionMaxLength: 40
         topK: 6
+        # 领域折叠（2026-08-21 杠杆 2）：按当前任务 query 展开匹配域 + 高频 skill，
+        # 其余域折叠成一行（需要时 skill_search）。实测任务相关时目录 ~1100 → ~400-600 tokens。
+        foldEnabled: true
+        foldKeepDomains: 1
+        foldKeepFrequent: 5

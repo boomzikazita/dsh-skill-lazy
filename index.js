@@ -173,13 +173,44 @@ function bumpUsage(name) {
 
 // ---------- catalog 精简渲染 ----------
 
-function renderCompactCatalog(entries, usage, cfg) {
+function renderCompactCatalog(entries, usage, cfg, query = '') {
   const maxLen = cfg.catalogDescriptionMaxLength ?? 40
   const sortByUsage = cfg.sortByUsage ?? true
+  const foldEnabled = cfg.foldEnabled ?? true
+  const foldKeepDomains = cfg.foldKeepDomains ?? 1   // 展开的匹配域数
+  const foldKeepFrequent = cfg.foldKeepFrequent ?? 5 // 额外展开的高频 skill 数
   const sorted = sortByUsage
     ? [...entries].sort((a, b) => (usage[b.name] || 0) - (usage[a.name] || 0) || a.name.localeCompare(b.name))
     : entries
-  const lines = sorted.map((e) => `- \`${e.name}\`: ${escapeText(shorten(e.description, maxLen))}`)
+
+  // 领域折叠（2026-08-21，杠杆 2）：按当前任务 query 判定匹配域，
+  // 只展开「匹配域 + 高频 skill」，其余域折叠成一行（需要时 skill_search）。
+  let lines = []
+  let folded = [] // {domain, count, names}
+  if (foldEnabled && query && query.trim()) {
+    const taskDomain = domainOf('', query) // query 直接判域（无 name）
+    const freqNames = new Set(sorted.slice(0, foldKeepFrequent).map((e) => e.name))
+    const expanded = []
+    const foldedByDomain = new Map()
+    for (const e of sorted) {
+      const dom = domainOf(e.name, e.description)
+      if (freqNames.has(e.name) || dom === taskDomain || taskDomain === 'other') {
+        expanded.push(e)
+      } else {
+        const rec = foldedByDomain.get(dom) || { count: 0, names: [] }
+        rec.count += 1
+        rec.names.push(e.name)
+        foldedByDomain.set(dom, rec)
+      }
+    }
+    lines = expanded.map((e) => `- \`${e.name}\`: ${escapeText(shorten(e.description, maxLen))}`)
+    for (const [dom, rec] of foldedByDomain) {
+      const label = DOMAINS.find((d) => d.id === dom)?.label || dom
+      lines.push(`- ⏳ 另有 ${rec.count} 个 ${label} skill（${rec.names.slice(0, 6).map((n) => `\`${n}\``).join(' ')}…）：需要时用 skill_search 检索`)
+    }
+  } else {
+    lines = sorted.map((e) => `- \`${e.name}\`: ${escapeText(shorten(e.description, maxLen))}`)
+  }
   return [
     '<system-reminder>',
     'A skill is a reusable set of task-specific instructions. This is a compact catalog (name + one-line summary, sorted by usage). The following skills are available in this session:',
@@ -315,6 +346,9 @@ export function apply(ctx, config = {}) {
     topK: config.topK ?? 6,
     sortByUsage: config.sortByUsage ?? true,
     matchThreshold: config.matchThreshold ?? 6, // 主动匹配提示的相关度阈值（2026-08-19 新增）
+    foldEnabled: config.foldEnabled ?? true,        // 领域折叠开关（2026-08-21 杠杆 2）
+    foldKeepDomains: config.foldKeepDomains ?? 1,   // 展开的匹配域数
+    foldKeepFrequent: config.foldKeepFrequent ?? 5, // 额外展开的高频 skill 数
   }
   const state = { lastHintSig: '' }
 
@@ -411,13 +445,14 @@ export function apply(ctx, config = {}) {
     if (!decision || decision.kind === 'reject') return decision
     const messages = decision.messages || []
     let updated = decision
-    // (a) catalog 精简（原有逻辑）
+    // (a) catalog 精简（原有逻辑）+ 领域折叠（2026-08-21：按当前任务 query 折叠非匹配域）
     const idx = messages.findIndex((m) => m?.source?.kind === 'skill-catalog')
     if (idx !== -1) {
       const msg = messages[idx]
       const entries = readCatalogEntries(msg.source)
       if (entries && entries.length > 0) {
-        const text = renderCompactCatalog(entries, loadUsage(), cfg)
+        const query = extractLatestUserText(updated.messages || messages)
+        const text = renderCompactCatalog(entries, loadUsage(), cfg, query)
         updated = { ...updated, messages: messages.map((m, i) => (i === idx ? { ...m, content: [{ type: 'text', text }] } : m)) }
       }
     }
@@ -464,7 +499,7 @@ export function apply(ctx, config = {}) {
   // ---------- 3. skill_search：按需检索 + MECE 分组 ----------
   ctx.tools.register(defineTool({
     name: 'skill_search',
-    description: 'Search the full skill library by keywords. Returns matching skills grouped by MECE domains (mutually exclusive groups, collectively exhaustive within each group), each with its full description, plus a domain coverage report that flags empty or weak domains. Use this before acting when the task may map to one of several skills, or when the compact skill catalog summary is not enough to decide.',
+    description: '按关键词检索技能库，返回按 MECE 领域分组的结果与领域覆盖报告。任务可能对应多个技能、或紧凑目录不够用时先用它。',
     parameters: {
       query: { type: 'string', required: true, description: 'Search keywords describing the task (Chinese or English).' },
       limit: { type: 'number', description: `Max hits per domain group (default ${cfg.topK}).` },
@@ -613,6 +648,90 @@ export function apply(ctx, config = {}) {
       }
       lines.push('')
       lines.push('**结论**：是否新建由你拍板。若①无高重叠、②落位合理 → 可走 skill_scaffold 创建；若①高重叠 → 建议先更新现有技能。')
+      return lines.join('\n')
+    },
+  }))
+
+  // ---------- 4. cost_audit：token 成本审计（2026-08-21 控制论落地） ----------
+  // 前馈表条目：插件工具描述总量 > 阈值 → 触发瘦身/折叠决策。
+  // 工具给数字（描述字符/token 估算），模型给判断（是否瘦身）。
+  ctx.tools.register(defineTool({
+    name: 'cost_audit',
+    description: 'token 成本审计：统计全部插件工具 description 与 skill 目录的字符/token 开销，对照预算阈值（工具描述默认 1500 tokens、skill 目录默认 800 tokens），超阈值提示瘦身/折叠。插件越建越多时的成本看门狗（控制论前馈：先观测再开药）。',
+    parameters: {
+      pluginDir: { type: 'string', required: true, description: '插件目录（默认 ~/.dsh/plugins；可省略）' },
+      toolBudgetTokens: { type: 'number', required: true, description: '工具描述 token 预算（默认 1500；可省略）' },
+      skillBudgetTokens: { type: 'number', required: true, description: 'skill 目录 token 预算（默认 800；可省略）' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (args, value) => [{ type: 'text', text: value }],
+    },
+    async execute(input) {
+      const HOME = homedir()
+      const pluginDir = input?.pluginDir ? String(input.pluginDir).replace(/^~/, HOME) : join(HOME, '.dsh', 'plugins')
+      const toolBudget = Number(input?.toolBudgetTokens) || 1500
+      const skillBudget = Number(input?.skillBudgetTokens) || 800
+      const lines = ['[cost_audit] token 成本审计', '']
+
+      // ① 插件工具描述统计
+      let toolChars = 0
+      const perPlugin = []
+      try {
+        for (const d of readdirSync(pluginDir, { withFileTypes: true })) {
+          if (!d.isDirectory()) continue
+          const f = join(pluginDir, d.name, 'index.js')
+          if (!existsSync(f)) continue
+          const text = readFileSync(f, 'utf8')
+          const descs = text.match(/description:\s*'([^']{20,})'/g) || []
+          const chars = descs.reduce((s, x) => s + x.length - 16, 0) // 去掉 description: ' 包裹
+          toolChars += chars
+          perPlugin.push([d.name, chars])
+        }
+      } catch (e) {
+        lines.push(`⚠️ 插件目录读取失败: ${e.message}`)
+      }
+      const toolTokens = Math.round(toolChars / 4)
+      lines.push(`① 插件工具描述: ${toolChars} 字符 ≈ ${toolTokens} tokens/轮（预算 ${toolBudget}）`)
+      for (const [name, chars] of perPlugin.sort((a, b) => b[1] - a[1])) {
+        const mark = chars > 700 ? ' ⚠️ 超 700 字符建议瘦身' : ''
+        lines.push(`  - ${name}: ${chars} 字符 ≈ ${Math.round(chars / 4)} tokens${mark}`)
+      }
+      if (toolTokens > toolBudget) {
+        lines.push(`  ❌ 超预算 ${toolTokens - toolBudget} tokens → 建议：对超长描述（>700 字符）瘦身，细节移 skill 文档`)
+      } else {
+        lines.push(`  ✅ 预算内（余 ${toolBudget - toolTokens} tokens）`)
+      }
+
+      // ② skill 目录统计
+      let skillChars = 0
+      try {
+        for (const d of readdirSync(SKILLS_DIR, { withFileTypes: true })) {
+          if (!d.isDirectory()) continue
+          const f = join(SKILLS_DIR, d.name, 'SKILL.md')
+          if (!existsSync(f)) continue
+          const raw = readFileSync(f, 'utf8')
+          const fm = raw.match(/^---\n([\s\S]*?)\n---/)
+          if (!fm) continue
+          const descM = fm[1].match(/^description:\s*(.+)$/m)
+          if (descM) skillChars += descM[1].trim().length
+        }
+      } catch (e) {
+        lines.push(`⚠️ skill 目录读取失败: ${e.message}`)
+      }
+      const skillTokens = Math.round(skillChars / 4)
+      lines.push('')
+      lines.push(`② skill 目录: ${skillChars} 字符 ≈ ${skillTokens} tokens/轮（预算 ${skillBudget}，已含领域折叠压减）`)
+      if (skillTokens > skillBudget) {
+        lines.push(`  ❌ 超预算 → 检查 foldEnabled 是否开启、或精简 description（第一句 ≤40 字符）`)
+      } else {
+        lines.push(`  ✅ 预算内`)
+      }
+
+      // ③ 结论
+      lines.push('')
+      lines.push(`合计固定开销: ~${toolTokens + skillTokens} tokens/轮`)
+      lines.push('控制论注：工具给数字，模型给判断——超预算项先确认"是否影响好用度"再瘦身；瘦身后观测回归（pHat 不升即为安全）。')
       return lines.join('\n')
     },
   }))

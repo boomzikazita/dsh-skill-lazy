@@ -1,25 +1,12 @@
 {
   "name": "dsh-skill-lazy",
+  "private": true,
   "version": "0.1.0",
   "type": "module",
   "main": "index.js",
-  "description": "Lazy skill catalog loading for DeepSeek Harness: injects only skill name + one-line summary on first pass to save tokens, with on-demand full lookup via skill_search and call-frequency ranking.",
-  "license": "MIT",
-  "author": "boomzikazita",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/boomzikazita/dsh-skill-lazy.git"
-  },
-  "keywords": [
-    "dsh",
-    "dsh-plugin",
-    "deepseek-harness",
-    "skill",
-    "lazy-loading",
-    "tokens"
-  ],
-  "peerDependencies": {
-    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.6"
+  "description": "DSH skill 目录懒加载：首轮只注入名字+一行短摘要（~500 tokens），完整摘要走 skill_search 按需检索，调用频率排序。",
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.6"
   },
   "dsh": {
     "bundle": {
