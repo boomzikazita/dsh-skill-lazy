@@ -106,14 +106,14 @@ const DOMAIN_MAP = {
 const DOMAINS = [
   { id: 'a-share', label: 'A股投资', keywords: ['A股', '股票', '行情', '复盘', '北向', '涨停', 'market', 'stock'] },
   { id: 'gov-doc', label: '政务公文', keywords: ['公文', '请示', '通知', '报告', '纪要', '汇报', '讲话', 'gongwen', 'official'] },
-  { id: 'office-doc', label: '办公文档', keywords: ['Word', 'Excel', 'PPT', 'PDF', 'docx', 'xlsx', 'pptx', '排版', '文档'] },
+  { id: 'office-doc', label: '办公文档', keywords: ['Word', 'Excel', 'PPT', 'PDF', 'docx', 'xlsx', 'pptx', '排版', '文档', 'OCR', '扫描', '提取文字'] },
   { id: 'dev', label: '代码开发', keywords: ['调试', 'debug', '代码', 'CLI', 'harness', 'patch', '编译', 'git'] },
   { id: 'github', label: 'GitHub 生态', keywords: ['github', 'pull request', 'merge request', 'issue', 'clone', 'repository', 'repo ', 'ci/cd', 'github action'] },
   { id: 'writing', label: '写作与内容', keywords: ['写作', '润色', '简历', '引用', '出版', 'humanize', 'citations'] },
   { id: 'memory-kb', label: '记忆与知识管理', keywords: ['记忆', '召回', 'wiki', '笔记', 'Obsidian', '思源', 'memory', '知识库'] },
   { id: 'thinking', label: '思维框架', keywords: ['思维', '框架', '分析', '矛盾', '麦肯锡', '结构化', 'perspective'] },
   { id: 'ops', label: '系统运维', keywords: ['运维', '部署', 'Docker', '服务', 'vaultwarden', '长寿', 'service'] },
-  { id: 'design', label: '视觉与设计', keywords: ['架构图', 'SVG', '图片', '图像', '设计', '截图', 'vision'] },
+  { id: 'design', label: '视觉与设计', keywords: ['架构图', 'SVG', '图片', '图像', '设计', '截图', 'vision', '读图', '看图', '识别', 'OCR', '照片'] },
   { id: 'dsh-platform', label: 'DSH 平台', keywords: ['dsh', '会话恢复', '中断', 'resume', 'harness'] },
   { id: 'research', label: '分析与研究', keywords: ['研究', '评估', '财报', '反例', '调研', 'research', 'audit'] },
   { id: 'skill-eng', label: '技能工程', keywords: ['技能工程', '技能蒸馏', '技能门禁', 'skill_audit', 'skill_scaffold', 'skill 创建', 'skill 蒸馏'] },
@@ -345,7 +345,7 @@ export function apply(ctx, config = {}) {
     catalogDescriptionMaxLength: config.catalogDescriptionMaxLength ?? 40,
     topK: config.topK ?? 6,
     sortByUsage: config.sortByUsage ?? true,
-    matchThreshold: config.matchThreshold ?? 6, // 主动匹配提示的相关度阈值（2026-08-19 新增）
+    matchThreshold: config.matchThreshold ?? 3, // 主动匹配提示的相关度阈值（2026-08-24 下调，扩大可发现性）
     foldEnabled: config.foldEnabled ?? true,        // 领域折叠开关（2026-08-21 杠杆 2）
     foldKeepDomains: config.foldKeepDomains ?? 1,   // 展开的匹配域数
     foldKeepFrequent: config.foldKeepFrequent ?? 5, // 额外展开的高频 skill 数
